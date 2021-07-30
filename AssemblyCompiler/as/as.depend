@@ -1,0 +1,10 @@
+# depslib dependency file v1.0
+1605468094 source:c:\users\user\google 雲端硬碟\程設作業\csi2p-ii-mini1-master\assemblycompiler\asmc.cpp
+	<iostream>
+	<string>
+	<cstring>
+	<cassert>
+	<regex>
+	<vector>
+	<map>
+
