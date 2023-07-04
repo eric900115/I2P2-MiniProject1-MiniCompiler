@@ -92,7 +92,7 @@ int condRPAR(Kind kind);
 // Check if the AST is semantically right. This function will call err() automatically if check failed.
 void semantic_check(AST *now);
 // Generate ASM code.
-int codegen(AST *root);
+void codegen(AST *root);
 // Free the whole AST.
 void freeAST(AST *now);
 //void inc_dec(int inc,int dec);
@@ -107,6 +107,7 @@ void AST_print(AST *head);
 char input[MAX_LENGTH];
 
 int flag = 1;
+int sp = -1;
 int main()
 {
     while (fgets(input, MAX_LENGTH, stdin) != NULL)
@@ -117,6 +118,7 @@ int main()
 
         semantic_check(ast_root);
         flag = 1;
+        sp = -1;
         //AST_print(ast_root);
         codegen(ast_root);
         free(content);
@@ -234,7 +236,7 @@ AST *parser(Token *arr, size_t len)
             case IDENTIFIER:
             case CONSTANT:
             case RPAR:
-                arr[i].kind = arr[i].kind - PLUS + ADD;
+                arr[i].kind = (Kind)(arr[i].kind - PLUS + ADD);
             default:
                 break;
             }
@@ -309,7 +311,7 @@ AST *parse(Token *arr, int l, int r, GrammarState S)
         if (arr[r].kind == PREINC || arr[r].kind == PREDEC)
         {
             // translate "PREINC", "PREDEC" into "POSTINC", "POSTDEC"
-            now = new_AST(arr[r].kind - PREINC + POSTINC, 0);
+            now = new_AST((Kind)(arr[r].kind - PREINC + POSTINC), 0);
             now->mid = parse(arr, l, r - 1, POSTFIX_EXPR);
             return now;
         }
@@ -411,304 +413,101 @@ void semantic_check(AST *now)
     semantic_check(now->rhs);
 }
 
-int codegen(AST *root)
-{
-    // TODO: Implement your codegen in your own way.
-    // You may modify the function parameter or the return type, even the whole structure as you wish.
 
-    static int flag_x = 0, flag_y = 0, flag_z = 0;
-    static int posinc = -1, posdec = -1, minus = -1;
-    static int inc_id, dec_id;
-    static int minus_count;
-    static int r_count = 3;
-    static int pos_incx = 0, pos_incy = 0, pos_incz = 0;
-    static int pos_decx = 0, pos_decy = 0, pos_decz = 0;
+void codegen(AST *root){
 
-    if (root == NULL)
+    static int assign_mem = -1;
+
+    if(root == NULL)
         return;
 
-    if (root->kind == ASSIGN)
-    {
-        int a = codegen(root->rhs);
-        int b = codegen(root->lhs);
-        int tmp = 4 * abs(b + 1);
-        if (a >= 0 && b < 0)
-        {
-            printf("add r%d 0 %d\n", tmp / 4, a);
-            printf("store [%d] r%d\n", tmp, tmp / 4);
-            printf("load r%d [%d]\n", tmp / 4, tmp);
-            printf("load r%d [%d]\n", a, tmp);
+    switch(root->kind){
+
+        case ASSIGN:
+            codegen(root->rhs);
+            codegen(root->lhs);
+            printf("store [%d] r%d\n", assign_mem, sp-1);
+            sp--;
+            break;
+        case ADD:
+            codegen(root->lhs);
+            codegen(root->rhs);
+            printf("add r%d r%d r%d\n", sp-1, sp, sp-1);
+            sp--;
+            break;
+        case SUB:
+            codegen(root->lhs);
+            codegen(root->rhs);
+            printf("sub r%d r%d r%d\n", sp-1, sp-1, sp);
+            sp--;
+            break;
+        case MUL:
+            codegen(root->lhs);
+            codegen(root->rhs);
+            printf("mul r%d r%d r%d\n", sp-1, sp, sp-1);
+            sp--;
+            break;
+        case DIV:
+            codegen(root->lhs);
+            codegen(root->rhs);
+            printf("div r%d r%d r%d\n", sp-1, sp-1, sp);
+            sp--;
+            break;
+        case REM:
+            codegen(root->lhs);
+            codegen(root->rhs);
+            printf("rem r%d r%d r%d\n", sp-1, sp-1, sp);
+            sp--;
+            break;
+        case PREINC:
+            codegen(root->mid);
+            printf("add r%d r%d 1\n", sp, sp);
+            printf("store [%d] r%d\n", assign_mem, sp);
+            break;
+        case PREDEC:
+            codegen(root->mid);
+            printf("sub r%d r%d 1\n", sp, sp);
+            printf("store [%d] r%d\n", assign_mem, sp);
+            break;
+        case POSTINC:
+            codegen(root->mid);
+            printf("add r%d r%d 1\n", sp, sp);
+            printf("store [%d] r%d\n", assign_mem, sp);
+            printf("sub r%d r%d 1\n", sp, sp);
+            break;
+        case POSTDEC:
+            codegen(root->mid);
+            printf("sub r%d r%d 1\n", sp, sp);
+            printf("store [%d] r%d\n", assign_mem, sp);
+            printf("add r%d r%d 1\n", sp, sp);
+            break;
+        case IDENTIFIER: {
+            int mem = (root->val - 120) * 4;
+            sp++;
+            assign_mem = mem;
+            printf("load r%d [%d]\n", sp, mem);
+            break;
         }
-        else if (a < 0 && b < 0)
-        {
-            printf("store [%d] r%d\n", tmp, abs(a + 1));
-            printf("load r%d [%d]\n", tmp / 4, tmp);
-            printf("load r%d [%d]\n", r_count, tmp);
-        }
-
-        if (flag == 1)
-        {
-            flag = -1;
-            if (pos_incx > 0)
-            {
-                if (flag_x == 0)
-                    printf("load r0 [0]\n");
-                printf("add r0 r0 %d\n", pos_incx);
-                printf("store [0] r0\n");
-            }
-            if (pos_incy > 0)
-            {
-                if (flag_y == 0)
-                    printf("load r1 [4]\n");
-                printf("add r1 r1 %d\n", pos_incy);
-                printf("store [4] r1\n");
-            }
-            if (pos_incz > 0)
-            {
-                if (flag_z == 0)
-                    printf("load r2 [8]\n");
-                printf("add r2 r2 %d\n", pos_incz);
-                printf("store [8] r2\n");
-            }
-            if (pos_decx > 0)
-            {
-                if (flag_x == 0)
-                    printf("load r0 [0]\n");
-                printf("sub r0 r0 %d\n", pos_decx);
-                printf("store [0] r0\n");
-            }
-            if (pos_decy > 0)
-            {
-                if (flag_y == 0)
-                    printf("load r1 [4]\n");
-                printf("sub r1 r1 %d\n", pos_decy);
-                printf("store [4] r1\n");
-            }
-            if (pos_decz > 0)
-            {
-                if (flag_z == 0)
-                    printf("load r2 [8]\n");
-                printf("sub r2 r2 %d\n", pos_decz);
-                printf("store [8] r2\n");
-            }
-        }
-        pos_decx = pos_decy = pos_decz = pos_incx = pos_incy = pos_incz = 0;
-
-        r_count++;
-
-        if (a >= 0)
-            return a;
-        else
-            return -r_count;
+        case CONSTANT:
+            sp++;
+            printf("add r%d 0 %d\n", sp, root->val);
+            break;
+        case LPAR:
+            codegen(root->mid);
+            break;
+        case RPAR:
+            break;
+        case PLUS:
+            codegen(root->mid);
+            break;
+        case MINUS:
+            codegen(root->mid);
+            printf("sub r%d 0 r%d\n", sp, sp);
+            break;
     }
-    else if (root->kind == ADD)
-    {
-        r_count++;
-        int a = codegen(root->lhs);
-        r_count++;
-        int b = codegen(root->rhs);
 
-        r_count = r_count - 2;
-        if (a >= 0 && b >= 0)
-            printf("add r%d %d %d\n", r_count, a, b);
-        else if (a >= 0 && b < 0)
-            printf("add r%d %d r%d\n", r_count, a, abs(b + 1));
-        else if (a < 0 && b >= 0)
-            printf("add r%d r%d %d\n", r_count, abs(a + 1), b);
-        else if (a < 0 && b < 0)
-            printf("add r%d r%d r%d\n", r_count, abs(a + 1), abs(b + 1));
-
-        int tmp = -r_count - 1;
-        return tmp;
-    }
-    else if (root->kind == SUB)
-    {
-        r_count++;
-        int a = codegen(root->lhs);
-        r_count++;
-        int b = codegen(root->rhs);
-        r_count = r_count - 2;
-
-        if (a >= 0 && b >= 0)
-        {
-            printf("sub r%d %d %d\n", r_count, a, b);
-        }
-        else if (a >= 0 && b < 0)
-            printf("sub r%d %d r%d\n", r_count, a, abs(b));
-        else if (a < 0 && b >= 0)
-            printf("sub r%d r%d %d\n", r_count, abs(a + 1), b);
-        else
-            printf("sub r%d r%d r%d\n", r_count, abs(a + 1), abs(b + 1));
-
-        int tmp = -r_count - 1;
-        return tmp;
-    }
-    else if (root->kind == DIV)
-    {
-        r_count++;
-        int a = codegen(root->lhs);
-        r_count++;
-        int b = codegen(root->rhs);
-        r_count = r_count - 2;
-
-        if (a >= 0 && b >= 0)
-        {
-            printf("div r%d %d %d\n", r_count, a, b);
-        }
-        else if (a >= 0 && b < 0)
-            printf("div r%d %d r%d\n", r_count, a, abs(b + 1));
-        else if (a < 0 && b >= 0)
-            printf("div r%d r%d %d\n", r_count, abs(a + 1), b);
-        else
-            printf("div r%d r%d r%d\n", r_count, abs(a + 1), abs(b + 1));
-
-        int tmp = -r_count - 1;
-        return tmp;
-    }
-    else if (root->kind == MUL)
-    {
-        r_count++;
-        int a = codegen(root->lhs);
-        r_count++;
-        int b = codegen(root->rhs);
-        r_count = r_count - 2;
-
-        if (a >= 0 && b >= 0)
-            printf("mul r%d %d %d\n", r_count, a, b);
-        else if (a >= 0 && b < 0)
-            printf("mul r%d %d r%d\n", r_count, a, abs(b + 1));
-        else if (a < 0 && b >= 0)
-            printf("mul r%d r%d %d\n", r_count, abs(a + 1), b);
-        else
-            printf("mul r%d r%d r%d\n", r_count, abs(a + 1), abs(b + 1));
-
-        int tmp = -r_count - 1;
-        return tmp;
-    }
-    else if (root->kind == REM)
-    {
-        r_count++;
-        int a = codegen(root->lhs);
-        r_count++;
-        int b = codegen(root->rhs);
-        r_count = r_count - 2;
-
-        if (a >= 0 && b >= 0)
-            printf("rem r%d %d %d\n", r_count, a, b);
-        else if (a >= 0 && b < 0)
-            printf("rem r%d %d r%d\n", r_count, a, abs(b + 1));
-        else if (a < 0 && b >= 0)
-            printf("rem r%d r%d %d\n", r_count, abs(a + 1), b);
-        else if (a < 0 && b < 0)
-            printf("rem r%d r%d r%d\n", r_count, abs(a + 1), abs(b + 1));
-
-        int tmp = -r_count - 1;
-        return tmp;
-    }
-    else if (root->kind == PREINC)
-    {
-
-        int s = codegen(root->mid);
-        int tmp = abs(s + 1);
-        int t2 = tmp * 4;
-        printf("add r%d r%d 1\n", tmp, tmp);
-        printf("store [%d] r%d\n", t2, tmp);
-
-        return s;
-    }
-    else if (root->kind == PREDEC)
-    {
-        int s = codegen(root->mid);
-        int tmp = abs(s + 1);
-        int t2 = tmp * 4;
-        printf("sub r%d r%d 1\n", tmp, tmp);
-        printf("store [%d] r%d\n", t2, tmp);
-        return s;
-    }
-    else if (root->kind == POSTINC)
-    {
-        int s = codegen(root->mid);
-        if (s == -1)
-            pos_incx++;
-        else if (s == -2)
-            pos_incy++;
-        else if (s == -3)
-            pos_incz++;
-        inc_id = abs(s + 1);
-        posinc = 1;
-        return s;
-    }
-    else if (root->kind == POSTDEC)
-    {
-        int s = codegen(root->mid);
-        if (s == -1)
-            pos_decx++;
-        else if (s == -2)
-            pos_decy++;
-        else if (s == -3)
-            pos_decz++;
-        dec_id = abs(s + 1);
-        posdec = 1;
-        return s;
-    }
-    else if (root->kind == IDENTIFIER)
-    {
-        if (root->val == 120)
-        {
-            if (flag_x == 0)
-            {
-                printf("load r0 [0]\n");
-                flag_x = 1;
-            }
-            return -1;
-        }
-        else if (root->val == 121)
-        {
-            if (flag_y == 0)
-            {
-                printf("load r1 [4]\n");
-                flag_y = 1;
-            }
-            return -2;
-        }
-        else if (root->val == 122)
-        {
-            if (flag_z == 0)
-            {
-                printf("load r2 [8]\n");
-                flag_z = 1;
-            }
-
-            return -3;
-        }
-    }
-    else if (root->kind == CONSTANT)
-    {
-        return root->val;
-    }
-    else if (root->kind == LPAR)
-    {
-        return codegen(root->mid);
-    }
-    else if (root->kind == PLUS)
-    {
-        return codegen(root->mid);
-    }
-    else if (root->kind == MINUS)
-    {
-        int a = codegen(root->mid);
-
-        if (a >= 0)
-            printf("sub r%d 0 %d\n", r_count + 1, a);
-
-        else if (a < 0)
-            printf("sub r%d 0 r%d\n", r_count + 1, abs(a + 1));
-
-        return -r_count - 2;
-    }
+    return;
 }
-//ASSIGN, ADD, SUB, MUL, DIV, REM, PREINC, PREDEC,
-//POSTINC, POSTDEC, IDENTIFIER, CONSTANT, LPAR, RPAR, PLUS, MINUS
 
 void freeAST(AST *now)
 {
